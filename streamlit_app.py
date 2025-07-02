@@ -7,7 +7,7 @@ st.set_page_config(
     page_title="Index and ETF Trend Viewer",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 with st.sidebar:
@@ -17,11 +17,12 @@ with st.sidebar:
     📞 Tel. 010-4430-2279  
     📩 E-mail. [gnsu0705@gmail.com](gnsu0705@gmail.com)  
     💻 Blog. [Super-Son](https://super-son.tistory.com/)  
+    😎 Resume. [Super-Son](https://super-son-resume.streamlit.app)
     """
     )
     st.divider()
     # Slider for selecting time period in months
-    months = st.slider("Select Time Period (months)", 1, 36, 24)
+    months = st.slider("Select Time Period (months)", 1, 36, 12)
 
 st.title("Index and ETF Trend Viewer")
 st.write(
@@ -64,6 +65,15 @@ def add_moving_averages(data):
     data["MA_60"] = data["Close"].rolling(window=60).mean()
     data["MA_120"] = data["Close"].rolling(window=120).mean()
     data["MA_200"] = data["Close"].rolling(window=200).mean()
+
+    # RSI 계산 추가
+    delta = data["Close"].diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=14, min_periods=14).mean()
+    avg_loss = loss.rolling(window=14, min_periods=14).mean()
+    rs = avg_gain / avg_loss
+    data["RSI"] = 100 - (100 / (1 + rs))
     return data
 
 
@@ -114,18 +124,19 @@ def filter_data(data, months):
 
 # Function to View Last 5 Days Dataframe and create candlestick chart with moving averages
 def create_candlestick_chart(data):
+    last_close = data.iloc[-1]["Close"]
     last_ma20 = data.iloc[-1]["MA_20"]
     last_ma60 = data.iloc[-1]["MA_60"]
     last_ma120 = data.iloc[-1]["MA_120"]
     last_ma200 = data.iloc[-1]["MA_200"]
+    last_rsi = data.iloc[-1]["RSI"]
 
     # =============== 최근 주가 그리기 ===============
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.info(f"Last Close = %.2f" % data.iloc[-1]["Close"])
+        st.info(f"Last Close = "f"{last_close:.2f}")
 
-    view_data = data[["Date", "Low", "High", "Close"]][-3:]
-
+    view_data = data[["Date", "Low", "High", "Close","MA_20","RSI"]][-5:]
     view_data["Close_Diff"] = data["Close"] - last_ma20
     view_data["Close_Diff%"] = view_data["Close_Diff"] / data["Close"] * 100
     view_data["Close_Diff%"] = view_data["Close_Diff%"].apply(
@@ -136,48 +147,18 @@ def create_candlestick_chart(data):
     view_data["Close_Diff_120"] = data["Close"] - last_ma120
     view_data["Close_Diff_200"] = data["Close"] - last_ma200
 
-    if len(view_data[view_data["Close_Diff_120"] < 0]) > 0:
-        with col2:
-            st.info(f"MA_120 = %.2f" % last_ma120)
-        with col3:
-            st.error(
-                "120일선 터치 : {}".format(
-                    view_data[view_data["Close_Diff_120"] < 0].reset_index().iloc[-1, 1]
-                )
-            )
-    elif len(view_data[view_data["Close_Diff_60"] < 0]) > 0:
-        with col2:
-            st.info(f"MA_60 = %.2f" % last_ma60)
-        with col3:
-            st.error(
-                "60일선 터치 : {}".format(
-                    view_data[view_data["Close_Diff_60"] < 0].reset_index().iloc[-1, 1]
-                )
-            )
-    elif len(view_data[view_data["Close_Diff"] < 0]) > 0:
-        with col2:
-            st.info(f"MA_20 = %.2f" % last_ma20)
-        with col3:
-            st.error(
-                "20일선 터치 : {}".format(
-                    view_data[view_data["Close_Diff"] < 0].reset_index().iloc[-1, 1]
-                )
-            )
-    else:
-        with col2:
-            st.info(f"MA_20 = %.2f" % last_ma20)
+    with col2:
+        if len(view_data[view_data["Close_Diff_120"] < 0]) > 0:
+            st.info(f"MA_120 = {last_ma120:.2f} ({last_ma120 - last_close:.2f})")
+        elif len(view_data[view_data["Close_Diff_60"] < 0]) > 0:
+            st.info(f"MA_60 = {last_ma60:.2f} ({last_ma60 - last_close:.2f})")
+        else:
+            st.info(f"MA_20 = {last_ma20:.2f} ({last_ma20 - last_close:.2f})")
+    with col3:
+        st.info(f"RSI = {last_rsi:.1f}")
 
     st.dataframe(
-        view_data[
-            [
-                "Date",
-                "Low",
-                "High",
-                "Close",
-                "Close_Diff",
-                "Close_Diff%",
-            ]
-        ],
+        view_data[["Date","Low","High","Close","MA_20","RSI"]],
         use_container_width=True,
         hide_index=True,
         column_config={
@@ -216,14 +197,27 @@ def create_candlestick_chart(data):
         height=400,
     )
 
+    # =============== RSI 차트 그리기 ===============
+    rsi_chart = alt.Chart(data).mark_line(color="purple").encode(
+        x=alt.X("Date:N", title="Date"),
+        y=alt.Y("RSI:Q", title="RSI", scale=alt.Scale(domain=[0, 100])),
+    ).properties(
+        width=800,
+        height=250,
+    )
+    rsi_rule_30 = alt.Chart(pd.DataFrame({"y": [30]})).mark_rule(strokeDash=[4,4], color="gray").encode(y="y")
+    rsi_rule_70 = alt.Chart(pd.DataFrame({"y": [70]})).mark_rule(strokeDash=[4,4], color="gray").encode(y="y")
+    rsi_final = (rsi_chart + rsi_rule_30 + rsi_rule_70)
+
+    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(rsi_final, use_container_width=True)
+
     return chart
 
+# nasdaq_data = fetch_data("^IXIC")
+# sp500_data = fetch_data("^GSPC")
 
-nasdaq_data = fetch_data("^IXIC")
-sp500_data = fetch_data("^GSPC")
-
-
-company_code = ["QLD"]
+company_code = ["QLD","USD"]
 
 # Create a list to hold the filtered stock data
 filtered_data = []
@@ -235,10 +229,11 @@ for code in company_code:
     stock_data_filtered = filter_data(stock_data, months)
     filtered_data.append((code.replace('^IXIC','NASDAQ').replace('^GSPC','S&P 500'), stock_data_filtered))
 
+# Create and display charts
 for i in range(len(filtered_data)):
     st.subheader(filtered_data[i][0] + " Chart")
-    chart = create_candlestick_chart(filtered_data[i][1])
-    st.altair_chart(chart, use_container_width=True)
+    create_candlestick_chart(filtered_data[i][1])
+    st.divider()
 
 # # Create and display charts in pairs
 # for i in range(0, len(filtered_data), 2):
@@ -246,13 +241,10 @@ for i in range(len(filtered_data)):
     
 #     with col1:
 #         st.subheader(filtered_data[i][0] + " Chart")
-#         chart = create_candlestick_chart(filtered_data[i][1])
-#         st.altair_chart(chart, use_container_width=True)
+#         create_candlestick_chart(filtered_data[i][1])
 
 #     if i + 1 < len(filtered_data):  # Check if there is a second column
 #         with col2:
-#             st.subheader(filtered_data[i + 1][0] + " Chart")
-#             chart = create_candlestick_chart(filtered_data[i + 1][1])
-#             st.altair_chart(chart, use_container_width=True)
-
-st.divider()
+#             st.subheader(filtered_data[i+1][0] + " Chart")
+#             create_candlestick_chart(filtered_data[i+1][1])
+#     st.divider()
