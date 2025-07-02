@@ -43,10 +43,8 @@ RSI(상대강도지수)는 주가의 상승과 하락의 강도를 비교하여 
 본 프로젝트에서는 RSI를 차트와 함께 시각화하여, 투자자가 과매수/과매도 구간을 쉽게 파악할 수 있도록 하였습니다.
 
 ## 참고
-- 연락처: 010-4430-2279
 - E-mail: gnsu0705@gmail.com
 - Blog: [Super-Son](https://super-son.tistory.com/)
-- Resume: [Super-Son](https://super-son-resume.streamlit.app)
 
 ---
 
